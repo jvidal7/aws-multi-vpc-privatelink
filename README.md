@@ -139,7 +139,7 @@ The project will be completed through the following major steps:
 
 The following diagram represents the planned architecture:
 
-![AWS Multi-VPC PrivateLink Architecture](aws-multi-vpc-privatelink-architecture.jpg)
+![AWS Multi-VPC PrivateLink Architecture](./images/aws-multi-vpc-privatelink-architecture.jpg)
 
 ---
 
