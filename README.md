@@ -31,7 +31,7 @@ The company wants a **clean, private-only connectivity model** where shared serv
 
 ---
 
-### Your Role as the Cloud Engineer
+### My Role as the Cloud Engineer
 
 In this project, I will design and implement a **multi-VPC AWS architecture** where:
 
