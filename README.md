@@ -135,15 +135,6 @@ The project will be completed through the following major steps:
 
 ---
 
-## Estimated Time & Cost ⚙️
-
-- **Estimated Time:** 3–4 hours
-- **Estimated Cost:** Approximately **$0–$1**, depending on resource usage and cleanup time
-
-> **Note:** AWS resources such as Network Load Balancers, Interface Endpoints, and EC2 instances may generate charges while running. Resources should be deleted after completing the project.
-
----
-
 ## Architectural Diagram
 
 The following diagram represents the planned architecture:
