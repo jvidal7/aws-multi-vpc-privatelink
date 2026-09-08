@@ -185,3 +185,296 @@ This project demonstrates several important cloud security concepts:
 - **Secure cross-VPC service consumption**
 
 ---
+
+## 3.2 Build and Configure All Three VPCs
+
+Before configuring AWS PrivateLink, I first built the network foundation for the environment.
+
+For this stage of the project, I created three isolated VPCs:
+
+- **Payments VPC**
+- **Analytics VPC**
+- **Shared Services VPC**
+
+Each VPC contains its own subnets, route tables, and networking components.
+
+This provides separation between the different environments and prepares the infrastructure for PrivateLink connectivity later in the project.
+
+---
+
+## Step 1: Create the Payments VPC
+
+The first environment I created was the **Payments VPC**.
+
+### Payments VPC Configuration
+
+- **VPC Name:** `payments-vpc`
+- **IPv4 CIDR:** `10.10.0.0/16`
+
+I created the VPC manually so I could configure each networking component individually.
+
+![Payments VPC](./images/payments-vpc.png)
+
+---
+
+### Payments Subnets
+
+Inside the Payments VPC, I created one public subnet and two private subnets.
+
+| Subnet | CIDR |
+|---|---|
+| `payments-public-subnet-1` | `10.10.1.0/24` |
+| `payments-private-subnet-1` | `10.10.2.0/24` |
+| `payments-private-subnet-2` | `10.10.3.0/24` |
+
+![Payments Subnets](./images/payments-subnets.png)
+
+---
+### Payments Route Table Setup
+
+I created a dedicated public route table named:
+
+`payments-public-rt`
+
+The public subnet was associated with this route table.
+
+![Payments Public Subnet Association](./images/payments-public-subnet-association.png)
+
+---
+
+### Payments Internet Gateway
+
+I created:
+
+`payments-igw`
+
+and attached it to:
+
+`payments-vpc`
+
+![Payments Internet Gateway](./images/payments-internet-gateway.png)
+
+---
+
+### Payments Public Route
+
+After attaching the Internet Gateway, I added the following routes to `payments-public-rt`:
+
+| Destination | Target |
+|---|---|
+| `10.10.0.0/16` | `local` |
+| `0.0.0.0/0` | `payments-igw` |
+
+![Payments Public Route Table](./images/payments-public-route-table.png)
+
+---
+
+At this point, the **Payments VPC network configuration was complete**.
+
+---
+---
+
+## Step 2: Create the Analytics VPC
+
+Next, I created the **Analytics VPC**.
+
+### Analytics VPC Configuration
+
+- **VPC Name:** `analytics-vpc`
+- **IPv4 CIDR:** `10.20.0.0/16`
+
+![Analytics VPC](./images/analytics-vpc.png)
+
+---
+
+### Analytics Subnets
+
+I created one public subnet and two private subnets.
+
+| Subnet | CIDR |
+|---|---|
+| `analytics-public-subnet-1` | `10.20.1.0/24` |
+| `analytics-private-subnet-1` | `10.20.2.0/24` |
+| `analytics-private-subnet-2` | `10.20.3.0/24` |
+
+![Analytics Subnets](./images/analytics-subnets.png)
+
+---
+
+### Analytics Route Table Setup
+
+I created a dedicated public route table named:
+
+`analytics-public-rt`
+
+The public subnet was associated with this route table.
+
+![Analytics Public Subnet Association](./images/analytics-public-subnet-association.png)
+
+---
+
+### Analytics Internet Gateway
+
+I created:
+
+`analytics-igw`
+
+and attached it to:
+
+`analytics-vpc`
+
+![Analytics Internet Gateway](./images/analytics-internet-gateway.png)
+
+---
+
+### Analytics Public Route
+
+After attaching the Internet Gateway, I added the following default route to `analytics-public-rt`:
+
+| Destination | Target |
+|---|---|
+| `0.0.0.0/0` | `analytics-igw` |
+| `10.20.0.0/16` | `local` |
+
+![Analytics Public Route Table](./images/analytics-public-route-table.png)
+
+---
+
+## Step 3: Create the Shared Services VPC
+
+The **Shared Services VPC** will host the internal application and later provide the AWS PrivateLink Endpoint Service.
+
+### Shared Services VPC Configuration
+
+- **VPC Name:** `shared-services-vpc`
+- **IPv4 CIDR:** `10.30.0.0/16`
+
+![Shared Services VPC](./images/shared-services-vpc.png)
+
+---
+
+### Shared Services Subnets
+
+I created one public subnet and two private subnets.
+
+| Subnet | CIDR |
+|---|---|
+| `shared-public-subnet-1` | `10.30.1.0/24` |
+| `shared-private-subnet-1` | `10.30.2.0/24` |
+| `shared-private-subnet-2` | `10.30.3.0/24` |
+
+The private subnets were placed in separate Availability Zones.
+
+![Shared Services Subnets](./images/shared-services-subnets.png)
+
+---
+
+### Shared Services Route Table Setup
+
+I created a dedicated public route table named:
+
+`shared-public-rt`
+
+The public subnet was associated with this route table.
+
+**Screenshot:** `shared-public-subnet-association.png`
+
+![Shared Public Subnet Association](./images/shared-public-subnet-association.png)
+
+---
+
+### Shared Services Internet Gateway
+
+I created:
+
+`shared-igw`
+
+and attached it to:
+
+`shared-services-vpc`
+
+**Screenshot:** `shared-services-internet-gateway.png`
+
+![Shared Services Internet Gateway](./images/shared-services-internet-gateway.png)
+
+---
+
+### Shared Services Public Route
+
+After attaching the Internet Gateway, I added the following routes to `shared-public-rt`:
+
+| Destination | Target |
+|---|---|
+| `10.30.0.0/16` | `local` |
+| `0.0.0.0/0` | `shared-igw` |
+
+**Screenshot:** `shared-services-public-route-table.png`
+
+![Shared Services Public Route Table](./images/shared-services-public-route-table.png)
+
+---
+
+At this point, the **Shared Services VPC network configuration was complete**.
+
+---
+## Step 4: Configure Security Groups
+
+After building the VPCs, I created dedicated Security Groups for each environment.
+
+| Security Group | VPC | Purpose |
+|---|---|---|
+| `shared-app-sg` | Shared Services VPC | Protects the internal application |
+| `payments-client-sg` | Payments VPC | Protects Payments client resources |
+| `analytics-client-sg` | Analytics VPC | Protects Analytics client resources |
+
+---
+
+### Shared Services Application Security Group
+
+- **Security Group:** `shared-app-sg`
+- **VPC:** `shared-services-vpc`
+- **Port:** `80`
+- **Protocol:** HTTP
+- **Source:** `10.0.0.0/8`
+
+**Screenshot:** `shared-app-security-group.png`
+
+![Shared App Security Group](./images/shared-app-security-group.png)
+
+---
+
+### Payments Client Security Group
+
+- **Security Group:** `payments-client-sg`
+- **VPC:** `payments-vpc`
+
+**Screenshot:** `payments-client-security-group.png`
+
+![Payments Client Security Group](./images/payments-client-security-group.png)
+
+---
+
+### Analytics Client Security Group
+
+- **Security Group:** `analytics-client-sg`
+- **VPC:** `analytics-vpc`
+
+**Screenshot:** `analytics-client-security-group.png`
+
+![Analytics Client Security Group](./images/analytics-client-security-group.png)
+
+---
+
+## Network Configuration Summary
+
+At the end of this stage, all three VPC environments were successfully created and configured.
+
+| VPC | CIDR | Public Subnet | Private Subnets |
+|---|---|---|---|
+| **Payments** | `10.10.0.0/16` | `10.10.1.0/24` | `10.10.2.0/24`, `10.10.3.0/24` |
+| **Analytics** | `10.20.0.0/16` | `10.20.1.0/24` | `10.20.2.0/24`, `10.20.3.0/24` |
+| **Shared Services** | `10.30.0.0/16` | `10.30.1.0/24` | `10.30.2.0/24`, `10.30.3.0/24` |
+
+This networking foundation prepares the environment for the **AWS PrivateLink configuration** in the next stage.
+
+---
