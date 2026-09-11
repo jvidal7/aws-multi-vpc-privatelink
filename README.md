@@ -1052,3 +1052,254 @@ The next section will configure the **Payments** and **Analytics** VPCs as Priva
 Each client VPC will receive its own **Interface Endpoint**, allowing it to access the Shared Services application privately without VPC peering or public internet connectivity.
 
 ---
+
+# 3.5 Consume the PrivateLink Service
+
+With the Shared Services application running behind an **internal Network Load Balancer** and exposed through a **PrivateLink Endpoint Service**, I configured the **Payments** and **Analytics** VPCs as PrivateLink consumers.
+
+Each consumer VPC uses an **Interface Endpoint** to connect privately to the Shared Services application.
+
+This allows both VPCs to access the internal service without exposing the application to the public internet.
+
+---
+
+## Step 1: Create the Interface Endpoint for the Payments VPC
+
+I first created an Interface Endpoint inside the **Payments VPC**.
+
+I opened:
+
+**VPC Console → Endpoints → Create endpoint**
+
+### Payments Endpoint Configuration
+
+- **Name Tag:** `payments-endpoint`
+- **Type:** Endpoint services that use NLBs and GWLBs
+
+![Payments Interface Endpoint Configuration](./images/payments-endpoint-config.png)
+
+---
+
+### Verify the PrivateLink Service
+
+Under **Service settings**, I pasted the PrivateLink **Service Name** created in the previous section.
+
+The service name follows a format similar to:
+
+```text
+com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx
+```
+
+I then selected **Verify service** to confirm that AWS could locate the PrivateLink service.
+
+![Payments PrivateLink Service Verification](./images/payments-service-verification.png)
+
+---
+
+### Payments VPC Network Settings
+
+I configured the endpoint to use:
+
+- **VPC:** `payments-vpc`
+- **Security Group:** `payments-client-sg`
+
+![Payments Endpoint Network Settings](./images/payments-endpoint-network-settings.png)
+
+After reviewing the configuration, I selected **Create endpoint**.
+
+The new endpoint initially entered:
+
+```text
+Pending acceptance
+```
+
+This is expected because the PrivateLink Endpoint Service requires manual approval.
+
+![Payments Endpoint Pending Acceptance](./images/payments-endpoint-pending-acceptance.png)
+
+---
+
+## Step 2: Create the Interface Endpoint for the Analytics VPC
+
+I repeated the same process for the **Analytics VPC**.
+
+I opened:
+
+**VPC Console → Endpoints → Create endpoint**
+
+### Analytics Endpoint Configuration
+
+- **Name Tag:** `analytics-endpoint`
+- **Type:** Endpoint services that use NLBs and GWLBs
+
+![Analytics Interface Endpoint Configuration](./images/analytics-endpoint-config.png)
+
+---
+
+### Verify the PrivateLink Service
+
+Under **Service settings**, I pasted the same PrivateLink **Service Name** used by the Payments endpoint.
+
+I selected **Verify service** to confirm that the PrivateLink service was available.
+
+I then configured:
+
+- **VPC:** `analytics-vpc`
+
+After reviewing the configuration, I selected **Create endpoint**.
+
+![Analytics Endpoint Configuration](./images/analytics-endpoint-network-settings.png)
+
+The Analytics Interface Endpoint was now waiting for provider approval.
+
+---
+
+## Step 3: Approve Both Endpoint Connections
+
+Because the PrivateLink Endpoint Service requires acceptance, both consumer endpoints must be manually approved before they can connect.
+
+I opened:
+
+**VPC Console → Endpoint Services → `shared-internal-service`**
+
+Then I opened the **Endpoint connections** section.
+
+Two connection requests appeared:
+
+- Payments VPC endpoint
+- Analytics VPC endpoint
+
+Both initially showed:
+
+```text
+Pending acceptance
+```
+
+![PrivateLink Endpoint Connections Pending](./images/privatelink-connections-pending.png)
+
+---
+
+### Accept the Endpoint Connections
+
+I selected each pending request and chose:
+
+**Actions → Accept endpoint connection**
+
+![Accept PrivateLink Endpoint Connection](./images/privatelink-accept-endpoint-connection.png)
+
+After the requests were accepted, the endpoint connections changed to:
+
+```text
+Available
+```
+
+![PrivateLink Endpoint Connections Available](./images/privatelink-connections-available.png)
+
+At this point:
+
+- The **Payments VPC** Interface Endpoint is connected
+- The **Analytics VPC** Interface Endpoint is connected
+- PrivateLink connectivity has been established
+- Both VPCs can privately access the Shared Services application
+
+The consumer-side architecture is now:
+
+```text
+Payments VPC
+     |
+     v
+payments-endpoint
+     |
+     |
+     +--------+
+              |
+              v
+       AWS PrivateLink
+              |
+              v
+   shared-internal-service
+              |
+              v
+      Internal NLB
+              |
+              v
+   shared-services-app
+              ^
+              |
+              |
+     +--------+
+     |
+analytics-endpoint
+     ^
+     |
+Analytics VPC
+```
+
+---
+
+## Step 4: Prove There Is No Internet Exposure
+
+To confirm that the Network Load Balancer is not publicly accessible, I tested its DNS name directly from my local computer.
+
+```bash
+curl <nlb-dns>
+```
+
+The connection should return:
+
+```text
+Timeout
+```
+
+or:
+
+```text
+Connection refused
+```
+
+![Internal NLB Connection Test](./images/internal-nlb-public-access-test.png)
+
+This confirms that:
+
+- The Network Load Balancer is internal-only
+- The EC2 application is not exposed to the public internet
+- PrivateLink provides the private connectivity path to the service
+
+---
+
+## Final Result
+
+The Payments and Analytics VPCs are now connected to the Shared Services application through AWS PrivateLink.
+
+The completed traffic path is:
+
+```text
+Payments VPC                     Analytics VPC
+     |                                |
+     v                                v
+payments-endpoint              analytics-endpoint
+     |                                |
+     +-------------+  +---------------+
+                   |  |
+                   v  v
+              AWS PrivateLink
+                    |
+                    v
+          shared-internal-service
+                    |
+                    v
+           shared-services-nlb
+                    |
+                    v
+           shared-services-tg
+                    |
+                    v
+          shared-services-app
+                    |
+                    v
+               Apache :80
+```
+
+The application remains private while still being accessible to approved consumer VPCs.
+
+---
