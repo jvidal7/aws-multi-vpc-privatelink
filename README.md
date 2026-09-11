@@ -1495,38 +1495,6 @@ The Analytics VPC follows the same private path through its own Interface Endpoi
 
 ---
 
-## Final Architecture
-
-The completed architecture looks like this:
-
-```text
-Payments VPC                         Analytics VPC
-     |                                    |
-     v                                    v
-payments-endpoint                  analytics-endpoint
-     |                                    |
-     +---------------+  +-----------------+
-                     |  |
-                     v  v
-                AWS PrivateLink
-                      |
-                      v
-             VPC Endpoint Service
-                      |
-                      v
-             Internal Network
-                Load Balancer
-                      |
-                      v
-             shared-services-tg
-                      |
-                      v
-             shared-services-app
-                      |
-                      v
-                 Apache :80
-```
-
 The Payments and Analytics VPCs can consume the same internal service without VPC peering or public internet exposure.
 
 ---
