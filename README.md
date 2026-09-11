@@ -1242,19 +1242,13 @@ Analytics VPC
 To confirm that the Network Load Balancer is not publicly accessible, I tested its DNS name directly from my local computer.
 
 ```bash
-curl <nlb-dns>
+curl.exe http://shared-services-nlb-ca414aa9fcaee2e5.elb.us-east-1.amazonaws.com
 ```
 
-The connection should return:
+The connection return:
 
 ```text
-Timeout
-```
-
-or:
-
-```text
-Connection refused
+curl: (6) Could not resolve host
 ```
 
 ![Internal NLB Connection Test](./images/internal-nlb-public-access-test.png)
