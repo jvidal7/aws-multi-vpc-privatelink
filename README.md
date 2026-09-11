@@ -478,3 +478,297 @@ At the end of this stage, all three VPC environments were successfully created a
 This networking foundation prepares the environment for the **AWS PrivateLink configuration** in the next stage.
 
 ---
+
+# 3.3 Deploy the Internal Service in the Shared Services VPC
+
+In this section, I deployed the private internal application that will later be accessed by the **Payments** and **Analytics** VPCs through AWS PrivateLink.
+
+The application runs on a private EC2 instance inside the **Shared Services VPC** and is configured automatically using EC2 User Data.
+
+The goal of this section is to:
+
+- Deploy the internal web application
+- Keep the EC2 instance private
+- Install and configure Apache automatically
+- Serve the application on port `80`
+- Prepare the service for the internal NLB and PrivateLink configuration
+
+---
+
+## Step 1: Launch the EC2 Instance
+
+I created an EC2 instance to host the internal Shared Services application.
+
+### EC2 Configuration
+
+- **Instance Name:** `shared-services-app`
+- **AMI:** Amazon Linux 2023
+- **Instance Type:** `t2.micro` or `t3.micro`
+
+![Shared Services EC2 Launch](./images/shared-services-ec2-launch.png)
+
+---
+
+### Network Configuration
+
+I placed the EC2 instance inside the private subnet of the Shared Services VPC.
+
+- **VPC:** `shared-services-vpc`
+- **Subnet:** `shared-private-subnet-1`
+- **Auto-assign Public IP:** Disabled
+- **Security Group:** `shared-app-sg`
+
+The instance does not receive a public IP address, which prevents the application from being directly exposed to the internet.
+
+![Shared Services EC2 Network Settings](./images/shared-services-ec2-network-settings.png)
+
+---
+
+### User Data Configuration
+
+I used **EC2 User Data** to automatically install and configure the internal application when the instance starts.
+
+The script:
+
+- Updates the operating system
+- Installs Apache (`httpd`)
+- Enables Apache to start automatically
+- Starts the Apache service
+- Creates the internal HTML application
+- Stores the application at `/var/www/html/index.html`
+
+```bash
+#!/bin/bash
+yum update -y
+yum install -y httpd
+systemctl enable httpd
+systemctl start httpd
+
+cat > /var/www/html/index.html << 'EOF'
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Shared Services - Internal API</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+    }
+
+    .card {
+      background: #020617;
+      padding: 24px 32px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      max-width: 480px;
+      text-align: center;
+    }
+
+    h1 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-size: 24px;
+    }
+
+    .tag {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid #38bdf8;
+      margin-bottom: 16px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    pre {
+      text-align: left;
+      background: #020617;
+      padding: 12px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 12px;
+      border: 1px solid #1e293b;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <div class="tag">Shared Services VPC</div>
+    <h1>PrivateLink Internal Service</h1>
+
+    <p>
+      This internal API is only reachable from approved VPCs via AWS PrivateLink.
+    </p>
+
+    <pre>{
+  "service": "shared-services-app",
+  "vpc": "shared-services-vpc",
+  "status": "healthy",
+  "access": "private-only"
+}</pre>
+  </div>
+</body>
+</html>
+EOF
+```
+
+![Shared Services EC2 User Data](./images/shared-services-user-data.png)
+
+---
+
+### What Happens When the Instance Boots
+
+When the EC2 instance starts, the User Data script automatically:
+
+1. Installs Apache
+2. Enables the Apache service
+3. Starts the web server
+4. Creates `/var/www/html/index.html`
+5. Serves the internal application on port `80`
+
+No manual login is required.
+
+The application flow at this stage is:
+
+```text
+shared-services-app
+        |
+        v
+Apache (httpd)
+        |
+        v
+TCP Port 80
+        |
+        v
+/var/www/html/index.html
+```
+
+---
+
+## Step 2: Give the Instance Time to Initialize
+
+After launching the instance, I waited for the EC2 initialization process and User Data script to finish.
+
+I confirmed:
+
+- **Instance State:** Running
+- **Status Checks:** `3/3 checks passed`
+- **Public IPv4 Address:** None
+- **Application Port:** `80`
+
+![Shared Services EC2 Status Checks](./images/shared-services-ec2-status-checks.png)
+
+At this point, the application is running internally on the EC2 instance.
+
+Because the instance is private and has no public IP address, the application is not directly accessible from my local computer.
+
+The application will later be validated through the **internal Network Load Balancer** and **AWS PrivateLink**.
+
+---
+
+## Step 3: What This Internal Service Represents
+
+This web application represents a private internal service that could exist inside a real enterprise environment.
+
+Examples include:
+
+- **Billing service**
+- **Authentication or identity service**
+- **Logging ingestion API**
+- **Metrics service**
+- **Central configuration service**
+- **Internal platform API**
+
+These types of services may need to be used by multiple teams while remaining inaccessible from the public internet.
+
+For this project, the service will:
+
+- Have no public IP address
+- Run inside a private subnet
+- Never be accessed directly from the internet
+- Sit behind an internal Network Load Balancer
+- Be exposed through an AWS PrivateLink Endpoint Service
+- Be consumed through Interface Endpoints
+
+---
+
+## Step 4: Why I Don't Log In Directly
+
+I intentionally do not use SSH to access the Shared Services application.
+
+The EC2 instance:
+
+- Runs inside a **private subnet**
+- Has **no public IP**
+- Does not require SSH for deployment
+- Does not require EC2 Instance Connect
+- Does not require a bastion host
+- Is configured automatically through EC2 User Data
+
+Instead of connecting directly to the server, the service will later be verified through the intended private network path:
+
+```text
+Payments / Analytics
+        |
+        v
+Interface Endpoints
+        |
+        v
+AWS PrivateLink
+        |
+        v
+Endpoint Service
+        |
+        v
+Internal NLB
+        |
+        v
+shared-services-app
+        |
+        v
+Apache :80
+```
+
+This keeps the backend service private while still allowing approved VPCs to access it.
+
+---
+
+## Expected Result
+
+At the end of this section:
+
+- `shared-services-app` is running
+- The instance is inside `shared-private-subnet-1`
+- No public IP is assigned
+- `shared-app-sg` is attached
+- Apache is installed
+- Apache starts automatically
+- `/var/www/html/index.html` is created
+- The application listens on port `80`
+- EC2 status checks are passing
+- The private application is ready to be placed behind an internal Network Load Balancer
+
+---
+
+## Next: 3.4 Set Up the PrivateLink Provider
+
+The next section will:
+
+1. Create the `shared-services-tg` Target Group
+2. Register `shared-services-app`
+3. Create the internal `shared-services-nlb`
+4. Forward TCP port `80` to the application
+5. Create the AWS PrivateLink Endpoint Service
+6. Copy the PrivateLink Service Name
+
+---
