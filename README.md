@@ -1297,3 +1297,310 @@ payments-endpoint              analytics-endpoint
 The application remains private while still being accessible to approved consumer VPCs.
 
 ---
+
+# 3.6 Understanding the Architecture & Final Testing
+
+With the PrivateLink setup complete, this section summarizes the architecture, explains why each component exists, and shows how the internal service is meant to be accessed.
+
+---
+
+## What We Built So Far
+
+### 1. Three Isolated VPCs
+
+I created three separate VPCs:
+
+- **Payments VPC**
+- **Analytics VPC**
+- **Shared Services VPC**
+
+Each environment remains isolated while still allowing controlled access to shared internal services.
+
+This separation helps support security, compliance, and least-privilege network design.
+
+---
+
+### 2. An Internal Service in the Shared Services VPC
+
+Inside the **Shared Services VPC**, I deployed:
+
+- A private EC2 instance
+- Apache (`httpd`)
+- A small internal HTML application
+
+The application represents an internal service that could be used for:
+
+- Billing
+- Identity
+- Logging
+- Central metrics
+- Internal APIs
+
+The service is not exposed to the public internet and is intended to remain private.
+
+---
+
+### 3. A PrivateLink Provider
+
+To expose the internal service privately, I created:
+
+- A **Target Group**
+- An **Internal Network Load Balancer**
+- A **VPC Endpoint Service**
+
+Together, these components allow the Shared Services VPC to provide the application through AWS PrivateLink without making it publicly accessible.
+
+The provider-side path is:
+
+```text
+VPC Endpoint Service
+        |
+        v
+Internal NLB
+        |
+        v
+Target Group
+        |
+        v
+Shared Services EC2
+```
+
+---
+
+### 4. PrivateLink Consumers
+
+Inside both the **Payments VPC** and **Analytics VPC**, I created Interface Endpoints.
+
+These endpoints provide private entry points into the Shared Services application.
+
+```text
+Payments VPC
+     |
+     v
+Interface Endpoint
+     |
+     |
+     +-----------+
+                 |
+                 v
+          AWS PrivateLink
+                 |
+                 v
+       Internal Shared Service
+                 ^
+                 |
+     +-----------+
+     |
+Interface Endpoint
+     ^
+     |
+Analytics VPC
+```
+
+All traffic remains on AWS's private network.
+
+---
+
+## Why This Architecture Matters
+
+This type of architecture is commonly used in environments such as:
+
+- FinTech
+- Enterprise SaaS
+- Banking
+- Healthcare platforms
+- Large distributed systems
+
+AWS PrivateLink allows isolated environments to consume shared services without requiring:
+
+- VPC peering
+- NAT Gateways for application traffic
+- Public endpoints
+- Public IP addresses
+
+This creates a cleaner and more controlled method of connecting isolated VPCs.
+
+---
+
+## How Enterprises Access Internal Services
+
+PrivateLink-based internal services are typically accessed from trusted private environments such as:
+
+- EC2 instances inside private VPCs
+- Corporate networks connected through VPN or Direct Connect
+- Bastion or jump hosts inside AWS
+- Internal developer machines connected to secure corporate networks
+
+They are not intended to be accessed directly from:
+
+- A laptop on the public internet
+- A home network
+- Devices outside the private AWS network
+
+---
+
+## What This Means for the Project
+
+Because the Shared Services application is strictly private:
+
+- I cannot open it directly from my local browser
+- I cannot reach the EC2 instance from my laptop
+- I cannot directly curl the internal NLB from outside AWS
+
+This is expected behavior.
+
+The architecture demonstrates that:
+
+- The EC2 instance is protected
+- The private subnet is isolated
+- The NLB is internal-only
+- PrivateLink provides private connectivity
+- The application does not require public exposure
+
+---
+
+## The Correct Way to Consume the Service
+
+The internal application is designed to be accessed:
+
+- Through AWS PrivateLink
+- From another VPC
+- Through an Interface Endpoint
+
+For example, the Payments VPC reaches the application through:
+
+```text
+Payments VPC
+     |
+     v
+Interface Endpoint
+     |
+     v
+AWS PrivateLink
+     |
+     v
+Internal NLB
+     |
+     v
+Target Group
+     |
+     v
+Shared Services EC2
+     |
+     v
+Apache :80
+```
+
+The Analytics VPC follows the same private path through its own Interface Endpoint.
+
+---
+
+## Final Architecture
+
+The completed architecture looks like this:
+
+```text
+Payments VPC                         Analytics VPC
+     |                                    |
+     v                                    v
+payments-endpoint                  analytics-endpoint
+     |                                    |
+     +---------------+  +-----------------+
+                     |  |
+                     v  v
+                AWS PrivateLink
+                      |
+                      v
+             VPC Endpoint Service
+                      |
+                      v
+             Internal Network
+                Load Balancer
+                      |
+                      v
+             shared-services-tg
+                      |
+                      v
+             shared-services-app
+                      |
+                      v
+                 Apache :80
+```
+
+The Payments and Analytics VPCs can consume the same internal service without VPC peering or public internet exposure.
+
+---
+
+## Final Note
+
+If the Shared Services application were directly accessible from my local browser over the public internet, the service would no longer be operating as a private-only backend.
+
+The inability to directly access the application from outside the AWS private network demonstrates that the architecture is maintaining the intended isolation.
+
+The Shared Services application is instead consumed through the private AWS PrivateLink path created between the provider and consumer VPCs.
+
+---
+
+# 3.7 Conclusion and Cleanup
+
+## Conclusion
+
+This project demonstrated how to build a **multi-VPC AWS PrivateLink architecture** that allows isolated environments to securely consume a shared internal service without exposing that service to the public internet.
+
+Throughout the project, I built three separate VPCs for **Payments**, **Analytics**, and **Shared Services**, keeping each environment isolated while still allowing controlled communication between them.
+
+I deployed the Shared Services application on a private EC2 instance, placed it behind an **internal Network Load Balancer**, and exposed it through an **AWS PrivateLink Endpoint Service**.
+
+The Payments and Analytics VPCs then connected to the service using their own **Interface Endpoints**.
+
+The completed traffic flow is:
+
+```text
+Payments VPC                         Analytics VPC
+     |                                    |
+     v                                    v
+payments-endpoint                  analytics-endpoint
+     |                                    |
+     +---------------+  +-----------------+
+                     |  |
+                     v  v
+                AWS PrivateLink
+                      |
+                      v
+             VPC Endpoint Service
+                      |
+                      v
+           Internal Network Load Balancer
+                      |
+                      v
+             shared-services-tg
+                      |
+                      v
+             shared-services-app
+                      |
+                      v
+                 Apache :80
+```
+
+Through this project, I gained hands-on experience with:
+
+- Multi-VPC network isolation
+- Private EC2 deployment
+- Private subnets
+- Security Groups
+- Network Load Balancers
+- Target Groups
+- AWS PrivateLink
+- VPC Endpoint Services
+- Interface Endpoints
+- Provider and consumer PrivateLink architecture
+- Controlling access between isolated VPCs
+- Keeping internal applications off the public internet
+
+The final architecture allows the **Payments** and **Analytics** environments to consume the Shared Services application while maintaining strong network isolation.
+
+No VPC peering is required, and the backend application remains private throughout the entire architecture.
+
+This project provided practical experience with a networking pattern commonly used for securely sharing internal services across isolated AWS environments.
+
+---
