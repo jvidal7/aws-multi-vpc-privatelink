@@ -772,3 +772,283 @@ The next section will:
 6. Copy the PrivateLink Service Name
 
 ---
+
+# 3.4 Set Up the PrivateLink Provider
+
+With the internal application running privately inside the **Shared Services VPC**, I configured the provider side of AWS PrivateLink.
+
+AWS PrivateLink separates connectivity into two sides:
+
+- **Provider side** — Hosts and exposes the private service
+- **Consumer side** — Connects to and consumes the private service
+
+In this section, the **Shared Services VPC** acts as the provider.
+
+The goal is to:
+
+- Create a Target Group for the private EC2 application
+- Register `shared-services-app` as a backend target
+- Place the application behind an internal Network Load Balancer
+- Expose the NLB through a PrivateLink Endpoint Service
+- Obtain the service name that the Payments and Analytics VPCs will use later
+
+The provider-side traffic flow is:
+
+```text
+PrivateLink Endpoint Service
+          |
+          v
+Internal Network Load Balancer
+          |
+          v
+Target Group
+          |
+          v
+shared-services-app
+          |
+          v
+Apache :80
+```
+
+---
+
+## Step 1: Create a Target Group for the Internal Service
+
+I first created a Target Group for the private EC2 application.
+
+The Target Group allows the Network Load Balancer to forward incoming TCP traffic to the backend EC2 instance.
+
+### Target Group Configuration
+
+- **Target Type:** Instances
+- **Target Group Name:** `shared-services-tg`
+- **Protocol:** TCP
+- **Port:** `80`
+- **VPC:** `shared-services-vpc`
+
+![Shared Services Target Group Configuration](./images/shared-services-target-group-config.png)
+
+---
+
+### Health Check Configuration
+
+I kept the Target Group health check settings configured to verify that the backend application is responding correctly.
+
+The health check allows AWS to determine whether `shared-services-app` is healthy enough to receive traffic.
+
+![Shared Services Target Group Health Check](./images/shared-services-target-group-health-check.png)
+
+---
+
+### Register the Backend Instance
+
+I registered the private EC2 instance as a backend target.
+
+- **Instance:** `shared-services-app`
+- **Port:** `80`
+
+![Shared Services Target Registration](./images/shared-services-target-registration.png)
+
+After registering the instance, the Target Group can forward application traffic to Apache running on port `80`.
+
+Once the NLB is attached, the target should eventually report:
+
+```text
+Healthy
+```
+
+![Shared Services Target Healthy](./images/shared-services-target-healthy.png)
+
+At this point, the backend application is ready to receive traffic from the Network Load Balancer.
+
+---
+
+## Step 2: Create the Internal Network Load Balancer
+
+Next, I created an **internal Network Load Balancer (NLB)**.
+
+The NLB operates at **Layer 4** and forwards TCP traffic to the Target Group.
+
+Because this application must remain private, the load balancer uses the **Internal** scheme instead of being internet-facing.
+
+### Network Load Balancer Configuration
+
+- **Name:** `shared-services-nlb`
+- **Scheme:** Internal
+- **IP Address Type:** IPv4
+- **VPC:** `shared-services-vpc`
+
+![Shared Services NLB Configuration](./images/shared-services-nlb-config.png)
+
+---
+
+### Network Mapping
+
+I associated the NLB with the private subnets inside the Shared Services VPC.
+
+- `shared-private-subnet-1`
+- `shared-private-subnet-2`
+
+Using multiple private subnets allows the load balancer to operate across multiple Availability Zones.
+
+![Shared Services NLB Network Mapping](./images/shared-services-nlb-network-mapping.png)
+
+---
+
+### Security Group Configuration
+
+I associated the Network Load Balancer with the Security Group used to control access to the internal service.
+
+- **Security Group:** `shared-nlb-sg`
+
+The backend EC2 instance remains protected by `shared-app-sg`.
+
+This creates a separation between access to the load balancer and access to the application instance.
+
+---
+
+### Listener Configuration
+
+I configured the NLB listener to accept TCP traffic on port `80`.
+
+- **Protocol:** TCP
+- **Port:** `80`
+- **Forward To:** `shared-services-tg`
+
+![Shared Services NLB Listener](./images/shared-services-nlb-listener.png)
+
+The resulting traffic path is:
+
+```text
+Internal NLB
+    |
+ TCP :80
+    |
+    v
+shared-services-tg
+    |
+    v
+shared-services-app
+    |
+    v
+Apache :80
+```
+
+After creating the load balancer, I waited for it to become:
+
+```text
+Active
+```
+
+and confirmed that the registered EC2 target became:
+
+```text
+Healthy
+```
+
+---
+
+## Step 3: Create the PrivateLink Endpoint Service
+
+With the internal NLB running, I exposed it through an **AWS PrivateLink Endpoint Service**.
+
+The Endpoint Service acts as the provider-side entry point for approved VPCs that want to consume the Shared Services application.
+
+### Endpoint Service Configuration
+
+I created the PrivateLink Endpoint Service using the internal Network Load Balancer.
+
+- **Name:** `shared-internal-service`
+- **Load Balancer Type:** Network Load Balancer
+- **Network Load Balancer:** `shared-services-nlb`
+- **Supported IP Address Type:** IPv4
+- **Acceptance Required:** Enabled
+- **State:** Available
+
+Keeping **Require acceptance for endpoint connections** enabled gives me control over which VPCs are allowed to connect to the PrivateLink service.
+
+![Shared Internal Endpoint Service](./images/shared-services-endpoint-service-config.png)
+
+---
+
+## Step 4: Copy the PrivateLink Service Name
+
+After creating the Endpoint Service, AWS generated a unique **Service Name**.
+
+It follows a format similar to:
+
+```text
+com.amazonaws.vpce.us-east-1.vpce-svc-xxxxxxxxxxxxxxxxx
+```
+
+This service name identifies the PrivateLink provider service.
+
+![PrivateLink Service Name](./images/privatelink-service-name.png)
+
+I saved this value because it will be required when creating the Interface Endpoints inside the:
+
+- **Payments VPC**
+- **Analytics VPC**
+
+Those VPCs will use this service name to request private connections to the Shared Services application.
+
+---
+
+## Provider-Side Architecture
+
+At the end of this section, the provider side of the architecture looks like this:
+
+```text
+PrivateLink Endpoint Service
+             |
+             v
+   shared-services-nlb
+       Internal NLB
+             |
+          TCP :80
+             |
+             v
+    shared-services-tg
+             |
+             v
+   shared-services-app
+             |
+             v
+        Apache :80
+```
+
+The application remains entirely private.
+
+There is:
+
+- No public-facing load balancer
+- No public IP on the application server
+- No direct internet exposure to the backend service
+- No VPC peering required for consumers
+
+---
+
+## Expected Result
+
+At the end of this section:
+
+- `shared-services-tg` exists
+- `shared-services-app` is registered as a backend target
+- The target reports as healthy
+- `shared-services-nlb` is running internally
+- TCP port `80` forwards to the Target Group
+- The NLB is not internet-facing
+- `shared-services-endpoint-service` is available
+- Endpoint connection acceptance is enabled
+- The PrivateLink Service Name has been copied
+- The Shared Services VPC is ready to accept PrivateLink consumer connections
+
+---
+
+## Next: Configure the PrivateLink Consumers
+
+The next section will configure the **Payments** and **Analytics** VPCs as PrivateLink consumers.
+
+Each client VPC will receive its own **Interface Endpoint**, allowing it to access the Shared Services application privately without VPC peering or public internet connectivity.
+
+---
